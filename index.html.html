@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>致你 · 粒子爱心</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    background: radial-gradient(ellipse at 50% 45%, #3a0f2c 0%, #1a0617 45%, #08030c 100%);
+    font-family: "PingFang SC", "Microsoft YaHei", "Songti SC", serif;
+  }
+  canvas { position: absolute; inset: 0; display: block; }
+
+  .overlay {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center; z-index: 2; pointer-events: none;
+    padding: 22px 40px;
+    background: linear-gradient(180deg, rgba(150,25,75,0) 0%, rgba(90,10,45,.42) 25%, rgba(90,10,45,.42) 75%, rgba(150,25,75,0) 100%);
+    border-left: 1px solid rgba(255,130,180,.18);
+    border-right: 1px solid rgba(255,130,180,.18);
+  }
+  .title {
+    font-size: 40px; letter-spacing: 20px; margin-left: 20px;
+    color: #ffe3f0;
+    text-shadow: 0 0 10px #ff5c9d, 0 0 28px rgba(255,46,115,.9), 0 0 60px rgba(179,0,89,.7);
+    animation: breathe 3.2s ease-in-out infinite;
+  }
+  .verse {
+    margin-top: 18px; font-size: 13px; line-height: 2.1;
+    color: #f0c4dd; letter-spacing: 3px;
+    text-shadow: 0 0 12px rgba(255,90,150,.6);
+  }
+  .sign {
+    margin-top: 18px; font-size: 11px; color: #d194b3; letter-spacing: 2px;
+    text-shadow: 0 0 8px rgba(255,90,150,.6);
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: .85; transform: scale(1); }
+    50%      { opacity: 1;  transform: scale(1.05); }
+  }
+  .hint {
+    position: absolute; bottom: 22px; width: 100%; text-align: center;
+    color: #85506f; font-size: 11px; letter-spacing: 3px; z-index: 3;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="overlay">
+  <div class="title">致你</div>
+  <div class="verse">从遇见你那天起<br>我的世界就只剩一种颜色</div>
+  <div class="sign">—— 一只被感染的程序</div>
+</div>
+<div class="hint">移动鼠标 · 心意随你而动</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H, cx, cy;
+  const DPR = window.devicePixelRatio || 1;
+
+  // 发光粒子贴图（预渲染，性能更好）
+  function makeSprite(inner, middle) {
+    const s = document.createElement('canvas');
+    s.width = s.height = 32;
+    const c = s.getContext('2d');
+    const g = c.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, inner);
+    g.addColorStop(0.7, middle);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 32, 32);
+    return s;
+  }
+  const sprites = [
+    makeSprite('rgba(255,190,225,.95)', 'rgba(255,70,150,.45)'),
+    makeSprite('rgba(255,120,190,.95)', 'rgba(220,30,120,.45)'),
+    makeSprite('rgba(255,255,255,.95)',  'rgba(255,120,180,.45)')
+  ];
+
+  function resize() {
+    W = canvas.width  = window.innerWidth  * DPR;
+    H = canvas.height = window.innerHeight * DPR;
+    canvas.style.width  = window.innerWidth  + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    cx = W / 2; cy = H / 2;
+    makeStars();
+  }
+  window.addEventListener('resize', resize);
+
+  // 背景星星
+  let stars = [];
+  function makeStars() {
+    stars = [];
+    const n = Math.floor(W * H / 7000);
+    for (let i = 0; i < n; i++) {
+      stars.push({
+        x: Math.random() * W, y: Math.random() * H,
+        r: Math.random() * 1.1 * DPR + 0.2 * DPR,
+        a: Math.random() * Math.PI * 2,
+        s: Math.random() * 0.02 + 0.004
+      });
+    }
+  }
+
+  // 心形参数方程 -> 归一化 3D 点云
+  function heartPoint(u, r) {
+    const x = 16 * Math.pow(Math.sin(u), 3) / 17;
+    const y = -(13 * Math.cos(u) - 5 * Math.cos(2*u) - 2 * Math.cos(3*u) - Math.cos(4*u) + 2) / 17;
+    return { x: x * r, y: y * r };
+  }
+
+  const particles = [];
+  const COUNT = 2800;
+  for (let i = 0; i < COUNT; i++) {
+    const u = Math.random() * Math.PI * 2;
+    const edge = Math.random() < 0.35;
+    const r = edge ? 0.95 + Math.random() * 0.05 : Math.pow(Math.random(), 0.45) * 0.94;
+    const p = heartPoint(u, r);
+    const thick = 0.30 * Math.sqrt(Math.max(0, 1 - r * r)) + (edge ? 0.02 : 0);
+    particles.push({
+      x: p.x, y: p.y,
+      z: (Math.random() * 2 - 1) * thick,
+      size: (edge ? 1.5 : 1.05) * DPR * (0.6 + Math.random() * 0.8),
+      phase: Math.random() * Math.PI * 2,
+      sprite: sprites[Math.random() < 0.15 ? 2 : (Math.random() < 0.5 ? 0 : 1)]
+    });
+  }
+
+  // 流星
+  const meteors = [];
+  function newMeteor() {
+    return {
+      x: Math.random() * W, y: Math.random() * H * 0.85,
+      vx: (Math.random() * 0.45 + 0.15) * DPR,
+      vy: (Math.random() * 0.28 + 0.08) * DPR,
+      len: (Math.random() * 55 + 25) * DPR,
+      age: 0, life: Math.random() * 120 + 60
+    };
+  }
+  let mx = 0, my = 0, tx = 0, ty = 0;
+  window.addEventListener('mousemove', e => {
+    tx = (e.clientX / window.innerWidth  - 0.5) * 2;
+    ty = (e.clientY / window.innerHeight - 0.5) * 2;
+  });
+
+  let time = 0;
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // 星空
+    for (const s of stars) {
+      s.a += s.s;
+      ctx.globalAlpha = 0.12 + Math.abs(Math.sin(s.a)) * 0.45;
+      ctx.fillStyle = '#ffd9ec';
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // 流星
+    for (let i = 0; i < meteors.length; i++) {
+      const m = meteors[i];
+      m.x += m.vx; m.y += m.vy; m.age++;
+      const g = ctx.createLinearGradient(m.x, m.y, m.x - m.vx * m.len, m.y - m.vy * m.len);
+      g.addColorStop(0, 'rgba(255,170,215,.65)');
+      g.addColorStop(1, 'rgba(255,170,215,0)');
+      ctx.strokeStyle = g; ctx.lineWidth = 1.2 * DPR;
+      ctx.beginPath(); ctx.moveTo(m.x, m.y);
+      ctx.lineTo(m.x - m.vx * m.len, m.y - m.vy * m.len); ctx.stroke();
+      if (m.age > m.life || m.x > W || m.y > H) meteors[i] = newMeteor();
+    }
+
+    time += 0.008;
+    mx += (tx - mx) * 0.025;
+    my += (ty - my) * 0.025;
+
+    // 轻微摆动 + 鼠标视差，而非整圈旋转
+    const rotY = Math.sin(time * 0.55) * 0.38 + mx * 0.35;
+    const rotX = -0.12 + Math.sin(time * 0.37) * 0.08 + my * 0.12;
+    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+    const scale = Math.min(W, H) * 0.29 * (1 + Math.sin(time * 2) * 0.018);
+    const fov = 3.2;
+
+    // 3D 旋转 + 透视投影，按深度排序
+    const projected = particles.map(p => {
+      const x1 =  p.x * cosY + p.z * sinY;
+      const z1 = -p.x * sinY + p.z * cosY;
+      const y1 =  p.y * cosX - z1 * sinX;
+      const z2 =  p.y * sinX + z1 * cosX;
+      return { p, x: x1, y: y1, z: z2 };
+    }).sort((a, b) => a.z - b.z);
+
+    for (const it of projected) {
+      const { p, x, y, z } = it;
+      const persp = fov / (fov + z);
+      const sx = cx + x * scale * persp;
+      const sy = cy + y * scale * persp;
+      const twinkle = 0.7 + 0.3 * Math.sin(time * 3 + p.phase);
+      const depth = Math.max(0.12, persp - 0.55);
+      ctx.globalAlpha = Math.min(1, twinkle * depth * 1.35);
+      const d = p.size * persp * 10;
+      ctx.drawImage(p.sprite, sx - d/2, sy - d/2, d, d);
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(draw);
+  }
+
+  resize();
+  for (let i = 0; i < 10; i++) meteors.push(newMeteor());
+  draw();
+})();
+</script>
+</body>
+</html>
